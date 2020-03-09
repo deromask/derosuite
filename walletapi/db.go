@@ -27,10 +27,10 @@ const FUNDS_SPENT = "FUNDS_SPENT"              // indices of all funds already s
 const FUNDS_SPENT_WHERE = "FUNDS_SPENT_WHERE"  // mapping which output -> spent where
 const FUNDS_BUCKET_OUTGOING = "FUNDS_OUTGOING" // stores all tx where our funds were spent
 
-const RING_BUCKET = "RING_BUCKET"         //  to randomly choose ring members when transactions are created
-const KEYIMAGE_BUCKET = "KEYIMAGE_BUCKET" // used to track which funds have been spent (only on chain ) and which output was consumed
-const SECRET_KEY_BUCKET = "TXSECRETKEY"   // used to keep secret keys for any tx this wallet has created
-const TX_OUT_DETAILS_BUCKET = "TX_OUT_DETAILS"   // used to keep secret keys for any tx this wallet has created
+const RING_BUCKET = "RING_BUCKET"              //  to randomly choose ring members when transactions are created
+const KEYIMAGE_BUCKET = "KEYIMAGE_BUCKET"      // used to track which funds have been spent (only on chain ) and which output was consumed
+const SECRET_KEY_BUCKET = "TXSECRETKEY"        // used to keep secret keys for any tx this wallet has created
+const TX_OUT_DETAILS_BUCKET = "TX_OUT_DETAILS" // used to keep secret keys for any tx this wallet has created
 
 const HEIGHT_TO_BLOCK_BUCKET = "H2BLOCK_BUCKET" // used to track height to block hash mapping
 const OUR_TX_BUCKET = "OUR_TX_BUCKET"           // this contains all TXs in which we have spent OUR  FUNDS
@@ -80,13 +80,13 @@ type Wallet struct {
 	KDF KDF `json:"kdf"`
 
 	account           *Account //`json:"-"` // not serialized, we store an encrypted version  // keys, seed language etc settings
-	Account_Encrypted []byte   `json:"account_encrypted"`
+	Account_Encrypted []byte `json:"account_encrypted"`
 
 	pbkdf2_password []byte // used to encrypt metadata on updates
 	master_password []byte // single password which never changes
 
 	Daemon_Endpoint   string `json:"-"` // endpoint used to communicate with daemon
-	Daemon_Height     uint64 `json:"-"` // used to track  daemon height  ony if wallet in online
+	Daemon_Height     uint64 `json:"-"` // used to track  daemon height  only if wallet in online
 	Daemon_TopoHeight int64  `json:"-"` // used to track  daemon topo height  ony if wallet in online
 
 	wallet_online_mode bool // set whether the mode is online or offline
@@ -191,6 +191,7 @@ func Create_Encrypted_Wallet_Random(filename string, password string) (w *Wallet
 		rlog.Errorf("err %s", err)
 		return
 	}
+	w.account.StartHeight = -1 // new accounts are automatically set to ignore previous chain
 	// TODO setup seed language, default is already english
 	rlog.Infof("Successfully created wallet %s", w.id)
 	return
@@ -231,7 +232,7 @@ func Create_Encrypted_Wallet_ViewOnly(filename string, password string, viewkey 
 }
 
 // create an encrypted wallet using using random data
-func Create_Encrypted_Wallet_NonDeterministic(filename string, password string, secretkey,viewkey string) (w *Wallet, err error) {
+func Create_Encrypted_Wallet_NonDeterministic(filename string, password string, secretkey, viewkey string) (w *Wallet, err error) {
 
 	var secret_spend, secret_view crypto.Key
 	rlog.Infof("Creating View Only Wallet")
@@ -243,7 +244,6 @@ func Create_Encrypted_Wallet_NonDeterministic(filename string, password string, 
 	}
 
 	copy(secret_spend[:], spend_raw[:32])
-	
 
 	view_raw, err := hex.DecodeString(strings.TrimSpace(viewkey))
 	if len(view_raw) != 32 || err != nil {
@@ -267,7 +267,7 @@ func Create_Encrypted_Wallet_NonDeterministic(filename string, password string, 
 	w.account.Keys.Spendkey_Public = *(secret_spend.PublicKey())
 	w.account.Keys.Viewkey_Secret = secret_view
 	w.account.Keys.Viewkey_Public = *(secret_view.PublicKey())
-	
+
 	w.Save_Wallet() // save wallet data
 	rlog.Infof("Successfully created view only wallet %s", w.id)
 	return
@@ -289,7 +289,7 @@ func (w *Wallet) Set_Encrypted_Wallet_Password(password string) (err error) {
 		return
 	}
 	w.KDF.Keylen = 32
-	w.KDF.Iterations = 262144
+	w.KDF.Iterations = 64 * 1024
 	w.KDF.Hashfunction = "SHA1"
 
 	// lets generate the bcrypted password
@@ -378,6 +378,8 @@ func Open_Encrypted_Wallet(filename string, password string) (w *Wallet, err err
 
 	w.id = string((w.account.GetAddress().String())[:8]) // set unique id for logs
 
+	w.quit = make(chan bool)
+
 	return
 
 }
@@ -450,6 +452,16 @@ func (w *Wallet) Save_Wallet() (err error) {
 	})
 	rlog.Infof("Saving wallet %s", w.id)
 	return
+}
+
+func (w *Wallet) Get_Wallet_Path() (path string) {
+	w.Lock()
+	defer w.Unlock()
+	if w == nil {
+		return
+	}
+
+	return w.db.Path()
 }
 
 // close the wallet
@@ -650,4 +662,17 @@ func itob(v uint64) []byte {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, uint64(v))
 	return b
+}
+
+func (w *Wallet) disable_sync() {
+	w.Lock()
+	w.db.NoSync = true
+	w.Unlock()
+}
+
+func (w *Wallet) enable_sync() {
+	w.Lock()
+	w.db.NoSync = false
+	w.db.Sync()
+	w.Unlock()
 }

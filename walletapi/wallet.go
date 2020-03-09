@@ -77,6 +77,12 @@ type Account struct {
 	Balance_Mature uint64 `json:"balance_mature"` // total balance of account
 	Balance_Locked uint64 `json:"balance_locked"` // balance locked
 
+	StartHeight     int64   `json:"startheight"`  // if this is -1, wallet initial height is obtained and set by daemon
+	// if this is positive, it is used as is
+	booster     time.Time // used to trigger booster
+	delay_time  int64 // delay between syncing of wallets
+	best_restore_height int64 // if wallet is restored from this height, the balance will be same
+
 	random_percent uint64 // number of outputs to store within the db, for mixing, default is 10%
 
 	key_image_checklist map[crypto.Key]bool // key images which need to be monitored, this is updated when new funds arrive
@@ -187,6 +193,11 @@ func Generate_Account_NONDeterministic_Only(Secretspend crypto.Key, ViewSecret c
 	return
 }
 
+
+func (w *Wallet) IsViewOnly() bool {
+	return w.account.ViewOnly
+}
+
 // convert key to seed using language
 func (w *Wallet) GetSeed() (str string) {
 	return mnemonics.Key_To_Words(w.account.Keys.Spendkey_Secret, w.account.SeedLanguage)
@@ -200,6 +211,10 @@ func (w *Wallet) GetSeedinLanguage(lang string) (str string) {
 // view wallet key consists of public spendkey and private view key
 func (w *Wallet) GetViewWalletKey() (str string) {
 	return fmt.Sprintf("%s%s", w.account.Keys.Spendkey_Public, w.account.Keys.Viewkey_Secret)
+}
+
+func (w *Wallet) GetSpendKey() (str string) {
+	return fmt.Sprintf("%s", w.account.Keys.Spendkey_Secret)
 }
 
 func (account *Account) GetAddress() (addr address.Address) {
@@ -574,6 +589,8 @@ func (w *Wallet) Get_Balance_Rescan() (mature_balance uint64, locked_balance uin
 
 	index_list := w.load_all_values_from_bucket(BLOCKCHAIN_UNIVERSE, []byte(FUNDS_AVAILABLE))
 
+	best_restore_height := int64(5000000000)
+
 	//fmt.Printf("found %d elements in bucket \n", len(index_list))
 	for i := range index_list { // load index
 		index := binary.BigEndian.Uint64(index_list[i])
@@ -593,7 +610,8 @@ func (w *Wallet) Get_Balance_Rescan() (mature_balance uint64, locked_balance uin
 		// check whether the height and block matches with what is stored at this point in time
 		local_hash, err := w.load_key_value(BLOCKCHAIN_UNIVERSE, []byte(HEIGHT_TO_BLOCK_BUCKET), itob(uint64(tx_wallet.TXdata.TopoHeight)))
 		if err != nil {
-			continue
+			//rlog.Warnf("err %s %d \n", err, tx_wallet.TXdata.TopoHeight);
+			//continue
 		}
 
 		// input disappeared due to chain soft fork
@@ -614,6 +632,10 @@ func (w *Wallet) Get_Balance_Rescan() (mature_balance uint64, locked_balance uin
 			continue // skip this input
 		}
 
+		if best_restore_height > tx_wallet.TXdata.TopoHeight {
+			best_restore_height = tx_wallet.TXdata.TopoHeight
+		}
+
 		if inputmaturity.Is_Input_Mature(w.account.Height,
 			tx_wallet.TXdata.Height,
 			tx_wallet.TXdata.Unlock_Height,
@@ -624,6 +646,10 @@ func (w *Wallet) Get_Balance_Rescan() (mature_balance uint64, locked_balance uin
 		}
 
 	}
+	if best_restore_height >= 5000000000 {
+		best_restore_height = -1
+	}
+	w.account.best_restore_height = best_restore_height // lowest topoheight input available is the topoheight wallet should be restored from
 
 	w.account.Balance_Mature = mature_balance
 	w.account.Balance_Locked = locked_balance
@@ -637,6 +663,10 @@ func (w *Wallet) Get_Balance_Rescan() (mature_balance uint64, locked_balance uin
 
 //
 func (w *Wallet) Get_Balance() (mature_balance uint64, locked_balance uint64) {
+
+	if w.account.best_restore_height == 0 {
+		return w.Get_Balance_Rescan() // call heavy function
+	}
 	w.RLock()
 	if !w.Is_Balance_Modified() {
 		w.RUnlock()
@@ -669,6 +699,9 @@ func (w *Wallet) Store_Height_Mapping(txdata *globals.TX_Output_Data) {
 
 			// fmt.Printf("Storing height to block %d %s\n", txdata.Height, txdata.BLID)
 		}
+		if txdata.TopoHeight > 500 { // continue delete and flush out chain data
+			w.delete_key(BLOCKCHAIN_UNIVERSE, []byte(HEIGHT_TO_BLOCK_BUCKET), itob(uint64(txdata.TopoHeight-499)))
+		}
 	}
 
 }
@@ -688,6 +721,58 @@ func (w *Wallet) Add_Possible_Ring_Member(txdata *globals.TX_Output_Data) {
 	defer w.Unlock()
 
 	w.account.Index_Global = txdata.Index_Global // increment out pointer
+
+	// new account definitely needs ring members
+	if w.account.StartHeight >= 0 && w.account.TopoHeight >= w.account.StartHeight && (w.account.TopoHeight-w.account.StartHeight) > 3000 {
+		/*if runtime.GOOS != "js" {
+
+			// first we must filter out ring members deterministically based on secret spend key
+		        var out [32]byte
+		        var in [16]byte
+		        var key [32]byte
+
+		        copy(key[:],w.account.Keys.Spendkey_Secret[:])
+
+		        binary.BigEndian.PutUint64(in[:], uint64(txdata.Index_Global))
+
+		        salsa.HSalsa20(&out,&in,&key,&in)
+
+		        deterministic_value := binary.BigEndian.Uint64(out[:])
+
+		        // this number increase cost while building the transaction
+		        if deterministic_value % 800  != 0  { // keep 1 out of every 800 ring members
+		         return
+		        }
+		        }else*/{
+
+			// Encrypt encrypts the 8 byte buffer src using the key in t and stores the
+			// result in dst. Note that for amounts of data larger than a block, it is not
+			// safe to just call Encrypt on successive blocks; instead, use an encryption
+			// mode like CBC (see crypto/cipher/cbc.go).
+			// NOTE : we are using only 16 bytes, it's slightly modified TEA
+			// just in case an attack can occur, still he will have to bruter force 2^128 combinations
+			e := binary.BigEndian
+			v0, v1 := uint32(txdata.Index_Global), uint32(0)
+			k0, k1, k2, k3 := e.Uint32(w.account.Keys.Spendkey_Secret[0:]), e.Uint32(w.account.Keys.Spendkey_Secret[4:]), e.Uint32(w.account.Keys.Spendkey_Secret[8:]), e.Uint32(w.account.Keys.Spendkey_Secret[12:])
+
+			sum := uint32(0)
+			delta := uint32(0x9e3779b9)
+
+			for i := 0; i < 64/2; i++ {
+				sum += delta
+				v0 += ((v1 << 4) + k0) ^ (v1 + sum) ^ ((v1 >> 5) + k1)
+				v1 += ((v0 << 4) + k2) ^ (v0 + sum) ^ ((v0 >> 5) + k3)
+				v0 ^= v1
+			}
+
+			if v0%800 != 0 { // keep 1 out of every 800 ring members
+				return
+			}
+
+		}
+	}
+
+	// rlog.Warnf("Selecting ring member %d", txdata.Index_Global)
 
 	var r Ring_Member
 	r.InKey = txdata.InKey
@@ -845,10 +930,9 @@ func (w *Wallet) Show_Transfers(available bool, in bool, out bool, pool bool, fa
 						duration, _ := time.ParseDuration(fmt.Sprintf("%ds", int64(180*entry.Height)))
 						entry.Time = dero_first_block_time.Add(duration)
 					}
-					
 					// fill tx secret_key 
 					entry.Secret_TX_Key =  w.GetTXKey(tx.TXdata.TXID)
-                                        entry.Details = w.GetTXOutDetails(tx.TXdata.TXID)
+					entry.Details = w.GetTXOutDetails(tx.TXdata.TXID)
 
 					entry.Status = 1
 					entries = append(entries, entry) // spend entry
@@ -889,10 +973,9 @@ func (w *Wallet) Get_Payments_Payment_ID(payid []byte, min_height uint64) (entri
 			entry.PaymentID = tx.WPaymentID
 			entry.Status = 0
 			entry.Unlock_Time = tx.TXdata.Unlock_Height
-			
 			// fill tx secret_key 
-                        entry.Secret_TX_Key =  w.GetTXKey(tx.TXdata.TXID)
-                        entry.Details = w.GetTXOutDetails(tx.TXdata.TXID)
+			entry.Secret_TX_Key = w.GetTXKey(tx.TXdata.TXID)
+			entry.Details = w.GetTXOutDetails(tx.TXdata.TXID)
 			entries = append(entries, entry)
 		}
 	}
@@ -928,8 +1011,8 @@ func (w *Wallet) Get_Payments_TXID(txid []byte) (entry Entry) {
 			entry.Unlock_Time = tx.TXdata.Unlock_Height
 			
 			// fill tx secret_key 
-                        entry.Secret_TX_Key =  w.GetTXKey(tx.TXdata.TXID)
-                        entry.Details = w.GetTXOutDetails(tx.TXdata.TXID)
+			entry.Secret_TX_Key =  w.GetTXKey(tx.TXdata.TXID)
+			entry.Details = w.GetTXOutDetails(tx.TXdata.TXID)
 		}
 	}
 
@@ -1023,6 +1106,13 @@ func (w *Wallet) Get_Daemon_Height() uint64 {
 	return w.Daemon_Height
 }
 
+func (w *Wallet) Get_Daemon_TopoHeight() int64 {
+	w.Lock()
+	defer w.Unlock()
+
+	return w.Daemon_TopoHeight
+}
+
 // return index position
 func (w *Wallet) Get_Index_Global() uint64 {
 	w.RLock()
@@ -1051,6 +1141,14 @@ func (w *Wallet) GetMode() bool {
 	defer w.RUnlock()
 
 	return w.wallet_online_mode
+}
+
+// use the endpoint set  by the program
+func (w *Wallet) GetDaemonAddress() string {
+	w.Lock()
+	defer w.Unlock()
+
+	return w.Daemon_Endpoint
 }
 
 // use the endpoint set  by the program
@@ -1182,4 +1280,29 @@ func (w *Wallet) GetTXOutDetails(txhash crypto.Hash) (details structures.Outgoin
 	}
 
 	return
+}
+
+func (w *Wallet) GetMinimumTopoHeight() int64 {
+	return w.account.best_restore_height
+}
+func (w *Wallet) GetInitialHeight() int64 {
+	return w.account.StartHeight
+}
+
+func (w *Wallet) SetInitialHeight(i int64) int64 {
+	w.account.StartHeight = i
+	return w.account.StartHeight
+}
+
+// setting an illegal time such as 0 returns current time
+func (w *Wallet) SetDelaySync(time_seconds int64) int64 {
+
+	if time_seconds > 5 && time_seconds < 300 { // make sure limit is sane
+		w.account.delay_time = time_seconds
+	}
+
+	if w.account.delay_time < 5 { // make sure time is sane
+		w.account.delay_time = 5
+	}
+	return w.account.delay_time
 }

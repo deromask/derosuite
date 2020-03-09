@@ -52,7 +52,8 @@ import "github.com/deromask/derosuite/transaction"
 var Connected bool = false
 
 // there should be no global variables, so multiple wallets can run at the same time with different assset
-var rpcClient *jsonrpc.RPCClient
+//var rpcClient *jsonrpc.RPCClient
+var rpcClient jsonrpc.RPCClient
 var netClient *http.Client
 var endpoint string
 
@@ -65,13 +66,12 @@ func (w *Wallet) IsDaemonOnlineCached() bool {
 
 // currently process url  with compatibility for older ip address
 func buildurl(endpoint string) string {
-    if strings.IndexAny(endpoint,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") >= 0 { // url is already complete
-        return strings.TrimSuffix(endpoint,"/")
-    }else{
-        return "http://" + endpoint
-    }
-    
-    
+	if strings.IndexAny(endpoint, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") >= 0 { // url is already complete
+		return strings.TrimSuffix(endpoint, "/")
+	} else {
+		return "http://" + endpoint
+	}
+
 }
 
 // this is as simple as it gets
@@ -79,9 +79,9 @@ func buildurl(endpoint string) string {
 // this will tell whether the wallet can connection successfully to  daemon or not
 func (w *Wallet) IsDaemonOnline() (err error) {
 
-    if globals.Arguments["--remote"] == true  && globals.IsMainnet() {
-        w.Daemon_Endpoint = config.REMOTE_DAEMON
-    }
+	if globals.Arguments["--remote"] == true && globals.IsMainnet() {
+		w.Daemon_Endpoint = config.REMOTE_DAEMON
+	}
 
 	// if user provided endpoint has error, use default
 	if w.Daemon_Endpoint == "" {
@@ -111,12 +111,12 @@ func (w *Wallet) IsDaemonOnline() (err error) {
 	}
 
 	// create client
-	rpcClient = jsonrpc.NewRPCClient(buildurl(w.Daemon_Endpoint) + "/json_rpc")
+	rpcClient = jsonrpc.NewClient(buildurl(w.Daemon_Endpoint) + "/json_rpc")
 
 	// execute rpc to service
 	response, err := rpcClient.Call("get_info")
 
-        // notify user of any state change
+	// notify user of any state change
 	// if daemon connection breaks or comes live again
 	if err == nil {
 		if !Connected {
@@ -132,6 +132,8 @@ func (w *Wallet) IsDaemonOnline() (err error) {
 
 		}
 		Connected = false
+		w.Daemon_Height = 0
+		w.Daemon_TopoHeight = 0
 
 		return
 	}
@@ -140,14 +142,19 @@ func (w *Wallet) IsDaemonOnline() (err error) {
 	if err != nil {
 		rlog.Errorf("Daemon getinfo RPC parsing error err: %s\n", err)
 		Connected = false
+		w.Daemon_Height = 0
+		w.Daemon_TopoHeight = 0
 		return
 	}
+	rlog.Infof("info from rpcinfo %+v\n", info)
 	// detect whether both are in different modes
 	//  daemon is in testnet and wallet in mainnet or
 	// daemon
 	if info.Testnet != !globals.IsMainnet() {
 		err = fmt.Errorf("Mainnet/TestNet  is different between wallet/daemon.Please run daemon/wallet without --testnet")
 		rlog.Criticalf("%s", err)
+		w.Daemon_Height = 0
+		w.Daemon_TopoHeight = 0
 		return
 	}
 
@@ -157,6 +164,15 @@ func (w *Wallet) IsDaemonOnline() (err error) {
 	if info.Height >= 0 {
 		w.Daemon_Height = uint64(info.Height)
 		w.Daemon_TopoHeight = info.TopoHeight
+	}
+
+	if w.account.StartHeight == -1  && info.TopoHeight > 1000000{
+		w.account.StartHeight = info.TopoHeight - 1000
+	}
+
+	// activate booster if  we are lagging behind
+	if ((w.Daemon_TopoHeight - w.account.TopoHeight) > 1000 ){
+		w.account.booster = time.Now() // this will activate booster
 	}
 	w.dynamic_fees_per_kb = info.Dynamic_fee_per_kb // set fee rate, it can work for quite some time,
 
@@ -224,7 +240,7 @@ func (w *Wallet) DetectSyncPoint() (start_sync_at_height uint64, err error) {
 
 		  }*/
 
-		response, err = rpcClient.CallNamed("getblockheaderbytopoheight", map[string]interface{}{"topoheight": median})
+		response, err = rpcClient.Call("getblockheaderbytopoheight", map[string]interface{}{"topoheight": median})
 		if err != nil {
 			rlog.Errorf("Connection to RPC server Failed err %s", err)
 			return
@@ -282,13 +298,31 @@ func (w *Wallet) Sync_Wallet_With_Daemon() {
 		return
 	}
 
-	rlog.Infof("wallet topo height %d daemon online topo height %d\n", w.account.TopoHeight, w.Daemon_TopoHeight)
-
-	start_height, err := w.DetectSyncPoint()
-	if err != nil {
-		rlog.Errorf("Error while detecting sync point err %s", err)
+	// the daemon must first setup the height properly, then only we will proceed
+	if w.account.StartHeight <= -1 {
 		return
 	}
+
+	rlog.Infof("wallet topo height %d daemon online topo height %d\n", w.account.TopoHeight, w.Daemon_TopoHeight)
+
+	start_height := w.account.TopoHeight
+
+	if start_height < w.account.StartHeight {
+		start_height = w.account.StartHeight
+	}
+
+	if start_height > 25 {
+		start_height = start_height - 25
+	}
+
+	//if runtime.GOOS != "js" {
+	//	start_height_tmp, err := w.DetectSyncPoint()
+	//	if err != nil {
+	//		rlog.Errorf("Error while detecting sync point err %s", err)
+	//		return
+	//	}
+	//	start_height = int64(start_height_tmp)
+	//}
 
 	// the safety cannot be tuned off in openbsd, see boltdb  documentation
 	// if we are doing major rescanning, turn of db safety features
@@ -307,7 +341,7 @@ func (w *Wallet) Sync_Wallet_With_Daemon() {
 
 	rlog.Infof("requesting outputs from height %d\n", start_height)
 
-	response, err := http.Get(fmt.Sprintf("%s/getoutputs.bin?startheight=%d",buildurl(w.Daemon_Endpoint), start_height))
+	response, err := http.Get(fmt.Sprintf("%s/getoutputs.bin?startheight=%d", buildurl(w.Daemon_Endpoint), start_height))
 	if err != nil {
 		rlog.Errorf("Error while requesting outputs from daemon err %s", err)
 	} else {
@@ -363,12 +397,34 @@ func (w *Wallet) Sync_Wallet_With_Daemon() {
 
 // triggers syncing with wallet every 5 seconds
 func (w *Wallet) sync_loop() {
+	counter := int64(86400)  // initial loop must go through ASAP
 	for {
+		if w.account.delay_time < 7 {  // make sure time is sane
+			w.account.delay_time = 7
+		}
 		select { // quit midway if required
 		case <-w.quit:
 			return
-		case <-time.After(5 * time.Second):
+		case <-time.After(time.Second):
 		}
+
+		// if we are lagging behind do fast sync
+		if (w.Daemon_TopoHeight - w.account.TopoHeight) > 100 {
+			counter = counter + 86400
+		}
+
+		if counter <  w.account.delay_time {
+			counter++
+
+			// check whether booster is active, it activates after TX is sent, for 4 minutes
+			// booster triggers every 7 seconds
+			if counter  >= 7 &&  (time.Now().Sub(w.account.booster) < 4 * 60 * time.Second) { // apply booster
+				//  rlog.Warnf("booster is active")
+			}else{
+				continue
+			}
+		}
+		counter = 0
 
 		if !w.wallet_online_mode { // wallet requested to be in offline mode
 			return
@@ -463,6 +519,7 @@ func (w *Wallet) SendTransaction(tx *transaction.Transaction) (err error) {
 	}
 
 	if result.Status == "OK" {
+		w.account.booster = time.Now() // this will activate booster
 		return nil
 	} else {
 		err = fmt.Errorf("Err %s", result.Status)
@@ -480,7 +537,6 @@ func (w *Wallet) SendTransaction(tx *transaction.Transaction) (err error) {
 // maybe the server can broadcast a bloomfilter or something else from the mempool keyimages
 //
 func (w *Wallet) IsKeyImageSpent(keyimage crypto.Key) (spent bool) {
-
 	defer func() {
 		if r := recover(); r != nil {
 			rlog.Warnf("Recovered while adding new block, Stack trace below keyimage %s", keyimage)
@@ -510,7 +566,7 @@ func (w *Wallet) IsKeyImageSpent(keyimage crypto.Key) (spent bool) {
 
 	// this method is NOT JSON RPC method, send raw as http request and parse response
 
-	resp, err := http.Post(fmt.Sprintf("%s/is_key_image_spent",buildurl(w.Daemon_Endpoint)), "application/json", &buf)
+	resp, err := http.Post(fmt.Sprintf("%s/is_key_image_spent", buildurl(w.Daemon_Endpoint)), "application/json", &buf)
 	if err != nil {
 		return
 	}
