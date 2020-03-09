@@ -30,14 +30,14 @@ import "fmt"
 import "github.com/romana/rlog"
 import "github.com/vmihailenco/msgpack"
 
-import "github.com/deroproject/derosuite/config"
-import "github.com/deroproject/derosuite/crypto"
-import "github.com/deroproject/derosuite/globals"
-import "github.com/deroproject/derosuite/storage"
-import "github.com/deroproject/derosuite/crypto/ringct"
-import "github.com/deroproject/derosuite/transaction"
+import "github.com/deromask/derosuite/config"
+import "github.com/deromask/derosuite/crypto"
+import "github.com/deromask/derosuite/globals"
+import "github.com/deromask/derosuite/storage"
+import "github.com/deromask/derosuite/crypto/ringct"
+import "github.com/deromask/derosuite/transaction"
 
-//import "github.com/deroproject/derosuite/walletapi"
+//import "github.com/deromask/derosuite/walletapi"
 
 type Index_Data struct {
 	InKey     ringct.CtKey

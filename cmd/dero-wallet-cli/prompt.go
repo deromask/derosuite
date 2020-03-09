@@ -29,11 +29,11 @@ import "encoding/hex"
 
 import "github.com/chzyer/readline"
 
-import "github.com/deroproject/derosuite/config"
-import "github.com/deroproject/derosuite/crypto"
-import "github.com/deroproject/derosuite/globals"
-import "github.com/deroproject/derosuite/address"
-import "github.com/deroproject/derosuite/walletapi"
+import "github.com/deromask/derosuite/config"
+import "github.com/deromask/derosuite/crypto"
+import "github.com/deromask/derosuite/globals"
+import "github.com/deromask/derosuite/address"
+import "github.com/deromask/derosuite/walletapi"
 
 var account walletapi.Account
 

@@ -26,9 +26,9 @@ import "context"
 import "github.com/intel-go/fastjson"
 import "github.com/osamingo/jsonrpc"
 
-import "github.com/deroproject/derosuite/config"
-import "github.com/deroproject/derosuite/globals"
-import "github.com/deroproject/derosuite/structures"
+import "github.com/deromask/derosuite/config"
+import "github.com/deromask/derosuite/globals"
+import "github.com/deromask/derosuite/structures"
 
 type GetInfo_Handler struct{}
 

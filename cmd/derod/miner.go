@@ -36,18 +36,18 @@ import "github.com/chzyer/readline"
 import "github.com/docopt/docopt-go"
 import log "github.com/sirupsen/logrus"
 
-import "github.com/deroproject/derosuite/address"
-import "github.com/deroproject/derosuite/p2pv2"
+import "github.com/deromask/derosuite/address"
+import "github.com/deromask/derosuite/p2pv2"
 
 
-import "github.com/deroproject/derosuite/config"
+import "github.com/deromask/derosuite/config"
 
-import "github.com/deroproject/derosuite/transaction"
+import "github.com/deromask/derosuite/transaction"
 
-//import "github.com/deroproject/derosuite/checkpoints"
-import "github.com/deroproject/derosuite/crypto"
-import "github.com/deroproject/derosuite/crypto/ringct"
-import "github.com/deroproject/derosuite/blockchain/rpcserver"
+//import "github.com/deromask/derosuite/checkpoints"
+import "github.com/deromask/derosuite/crypto"
+import "github.com/deromask/derosuite/crypto/ringct"
+import "github.com/deromask/derosuite/blockchain/rpcserver"
 */
 
 import "time"
@@ -59,12 +59,12 @@ import "sync/atomic"
 //import "encoding/hex"
 import "encoding/binary"
 
-import "github.com/deroproject/derosuite/block"
-import "github.com/deroproject/derosuite/crypto"
-import "github.com/deroproject/derosuite/globals"
-import "github.com/deroproject/derosuite/address"
-import "github.com/deroproject/derosuite/blockchain"
-import "github.com/deroproject/derosuite/cryptonight"
+import "github.com/deromask/derosuite/block"
+import "github.com/deromask/derosuite/crypto"
+import "github.com/deromask/derosuite/globals"
+import "github.com/deromask/derosuite/address"
+import "github.com/deromask/derosuite/blockchain"
+import "github.com/deromask/derosuite/cryptonight"
 
 // p2p needs to export a varible declaring whether the chain is in syncronising mode
 

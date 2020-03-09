@@ -18,7 +18,7 @@ package main
 
 // ripoff from blockchain folder
 import "math/big"
-import "github.com/deroproject/derosuite/crypto"
+import "github.com/deromask/derosuite/crypto"
 
 var (
 	// bigZero is 0 represented as a big.Int.  It is defined here to avoid

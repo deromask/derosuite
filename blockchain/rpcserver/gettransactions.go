@@ -23,10 +23,10 @@ import "encoding/json"
 import "github.com/romana/rlog"
 import "github.com/vmihailenco/msgpack"
 
-import "github.com/deroproject/derosuite/crypto"
-import "github.com/deroproject/derosuite/globals"
-import "github.com/deroproject/derosuite/structures"
-import "github.com/deroproject/derosuite/transaction"
+import "github.com/deromask/derosuite/crypto"
+import "github.com/deromask/derosuite/globals"
+import "github.com/deromask/derosuite/structures"
+import "github.com/deromask/derosuite/transaction"
 
 // we definitely need to clear up the MESS that has been created by the MONERO project
 // half of their APIs are json rpc and half are http

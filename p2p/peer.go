@@ -28,10 +28,10 @@ import "encoding/binary"
 //import log "github.com/sirupsen/logrus"
 //import "github.com/vmihailenco/msgpack"
 
-//import "github.com/deroproject/derosuite/crypto"
-//import "github.com/deroproject/derosuite/globals"
+//import "github.com/deromask/derosuite/crypto"
+//import "github.com/deromask/derosuite/globals"
 
-//import "github.com/deroproject/derosuite/blockchain"
+//import "github.com/deromask/derosuite/blockchain"
 
 // This file defines  what all needs to be responded to become a server ( handling incoming requests)
 

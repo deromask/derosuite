@@ -22,9 +22,9 @@
 
 package structures
 
-import "github.com/deroproject/derosuite/globals"
+import "github.com/deromask/derosuite/globals"
 
-//import "github.com/deroproject/derosuite/structures"
+//import "github.com/deromask/derosuite/structures"
 
 type (
 	GetBlockHeaderByHeight_Params struct {

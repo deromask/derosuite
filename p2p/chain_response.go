@@ -27,10 +27,10 @@ package p2p
 import "github.com/romana/rlog"
 import "github.com/vmihailenco/msgpack"
 
-import "github.com/deroproject/derosuite/crypto"
-import "github.com/deroproject/derosuite/config"
+import "github.com/deromask/derosuite/crypto"
+import "github.com/deromask/derosuite/config"
 
-//import "github.com/deroproject/derosuite/blockchain"
+//import "github.com/deromask/derosuite/blockchain"
 
 // peer has responded with chain response and we must process the response
 func (connection *Connection) Handle_ChainResponse(buf []byte) {

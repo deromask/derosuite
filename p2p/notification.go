@@ -28,11 +28,11 @@ import "encoding/binary"
 import "github.com/romana/rlog"
 import "github.com/vmihailenco/msgpack"
 
-import "github.com/deroproject/derosuite/crypto"
-import "github.com/deroproject/derosuite/globals"
-import "github.com/deroproject/derosuite/block"
-import "github.com/deroproject/derosuite/errormsg"
-import "github.com/deroproject/derosuite/transaction"
+import "github.com/deromask/derosuite/crypto"
+import "github.com/deromask/derosuite/globals"
+import "github.com/deromask/derosuite/block"
+import "github.com/deromask/derosuite/errormsg"
+import "github.com/deromask/derosuite/transaction"
 
 // Peer has notified us of a new transaction
 func (connection *Connection) Handle_Notification_Transaction(buf []byte) {
